@@ -11,22 +11,22 @@ subjects:
 
 train_subs:
   - 1
-  - 2
-  - 3
+  # - 2
+  # - 3
 train_seqs:
-  {'rom':[1,2,3], 'walking':[1,3], 'acting':[1,2], 'running':[], 'freestyle':[1,2]}
-  # {'rom':[1]}
+  # {'rom':[1,2,3], 'walking':[1,3], 'acting':[1,2], 'running':[], 'freestyle':[1,2]}
+  {'rom':[1]}
 
 
 test_subs:
   - 1
-  - 2
-  - 3
-  - 4
-  - 5
+  # - 2
+  # - 3
+  # - 4
+  # - 5
 test_seqs:
-  {'rom':[], 'walking':[2], 'acting':[3], 'running':[], 'freestyle':[3]}
-  # {'walking':[2]}
+  # {'rom':[], 'walking':[2], 'acting':[3], 'running':[], 'freestyle':[3]}
+  {'walking':[2]}
 
 gen_train: true
 gen_test: true

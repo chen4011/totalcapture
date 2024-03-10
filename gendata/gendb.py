@@ -118,10 +118,13 @@ def extract_db(config, dir_meta, cameras):
             bone_refs[bone] = {'joint_p': joint_p, 'joint_c': joint_c,
                                'bone_vec': bone_vec,
                                'q_TI': q_TI, 'q_ib': q_ib}
+            # print('bone_refs_', bone, ':', bone_refs[bone], '\n')
+            with open(os.path.join(config['db_out_dir'], 'bone_refs.txt'), 'a+') as f:
+                f.write('bone_refs_' + bone + ':' + str(bone_refs[bone]) + '\n')
 
         bone_vectors = dict()  # of all frames
 
-        for c in range(8):
+        for c in range(2):
             mp4_file_name = 'TC_S{}_{}{}_cam{}.mp4'.format(meta_sub, meta_act, meta_subact, c+1)
             mp4_file_path = os.path.join(dir, mp4_file_name)
             cam = cameras[c]
