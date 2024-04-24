@@ -26,6 +26,7 @@ def get_train_val_dirs(config):
             for i in config['train_seqs'][a]:
                 action_path = '{}{}'.format(a, i)
                 seq_dir = os.path.join(config['dataset_root_dir'], sub_path, action_path)
+                # print('=>subject:', s, 'action:', config['action_map'][a], 'subaction:', i)
                 meta = {
                     'subject': s,
                     'action': config['action_map'][a],
@@ -97,6 +98,7 @@ def extract_db(config, dir_meta, cameras):
         calib_imu_bone = dt.parse_calib_imu_bone(calib_imu_bone_path)
         calib_imu_ref = dt.parse_calib_imu_ref(calib_imu_ref_path)
         bone_info = dt.parse_imu_bone_info(bvh_path)
+        # print('=>bone_info:', bone_info)
         canvas_size = (1079., 1919.)  # height width
 
         filtered_joints = config['joints_filter']
@@ -104,12 +106,19 @@ def extract_db(config, dir_meta, cameras):
         # bone vector / orientation, not camera related
         bones = ['Head', 'Sternum', 'Pelvis', 'L_UpArm', 'R_UpArm', 'L_LowArm', 'R_LowArm',
                  'L_UpLeg', 'R_UpLeg', 'L_LowLeg', 'R_LowLeg']
+        
         # obtain ref for all bones
+        # 骨架資訊
         bone_refs = dict()
         for bone in bones:
+            # print('=>bone:', bone)
             joint_p = bone_info[bone][0]    # start of bone
+            # print('=>joint_p:', joint_p)
             joint_c = bone_info[bone][1]    # end of bone
+            # print('=>joint_c:', joint_c)
             bone_vec = np.array(bone_info[bone][2]) * 25.4  # length of bone * 25.4
+            # print('=>bone_info[bone][2]', bone_info[bone][2])
+            # print('=>bone_vec:', bone_vec)
             q_TI = calib_imu_ref[bone]
             q_bi = calib_imu_bone[bone]
             q_TI = Quaternion(q_TI)
@@ -119,12 +128,12 @@ def extract_db(config, dir_meta, cameras):
                                'bone_vec': bone_vec,
                                'q_TI': q_TI, 'q_ib': q_ib}
             # print('bone_refs_', bone, ':', bone_refs[bone], '\n')
-            with open(os.path.join(config['db_out_dir'], 'bone_refs.txt'), 'a+') as f:
-                f.write('bone_refs_' + bone + ':' + str(bone_refs[bone]) + '\n')
+            # with open(os.path.join(config['db_out_dir'], 'bone_refs.txt'), 'a+') as f:
+            #     f.write('bone_refs_' + bone + ':' + str(bone_refs[bone]) + '\n')
 
         bone_vectors = dict()  # of all frames
 
-        for c in range(2):
+        for c in range(8):
             mp4_file_name = 'TC_S{}_{}{}_cam{}.mp4'.format(meta_sub, meta_act, meta_subact, c+1)
             mp4_file_path = os.path.join(dir, mp4_file_name)
             cam = cameras[c]
@@ -148,12 +157,17 @@ def extract_db(config, dir_meta, cameras):
                     os.makedirs(seq_dir_path)
 
             vid_ff = vreader(mp4_file_path)
-            min_frame_to_iter = min(vid_frame_num, len(gt_pos), len(gt_ori), len(imu_data))
+            min_frame_to_iter = min(vid_frame_num, len(gt_pos), len(gt_ori), len(imu_data)) # 計算最小的幀數min_frame_to_iter，這是視頻的幀數、3D姿態數據的數量、方向數據的數量和IMU數據的數量中的最小值
+            # 對於每一幀（從0到min_frame_to_iter），進行以下操作
             for idx in tqdm(range(min_frame_to_iter)):
+                # 初始化一個全為0的3D姿態數組pose3d，其形狀為[3, 所有關節的數量]
                 pose3d = np.zeros([3, len(all_joints)])
+                # 對於所有關節中的每一個關節，將其3D位置從gt_pos中提取出來，並將其放入pose3d中
                 for idx_j, j in enumerate(all_joints):
                     pose3d[:, idx_j] = gt_pos[idx][j]
+                # 將pose3d轉換為pose3d*0.0254，即將英寸轉換為米
                 pose3d = pose3d * 0.0254  # inch to meter
+                # 將pose3d投影到2D平面上，得到pose2d，cam是一個相機模型，do_distor_corr=True表示需要進行失真校正
                 pose2d = project_pose3d_to_2d(pose3d, cam, do_distor_corr=True)
 
                 if config['save_visualization'] or config['save_frame']:
@@ -171,14 +185,14 @@ def extract_db(config, dir_meta, cameras):
                 mvpose_vis = np.reshape([vis/2., vis/2., vis/2.], (3, -1))
                 # vis follow coco protocol, divide 2 and copy 3 times to follow mvpose
                 root_joint = project_pose3d_to_cam(np.reshape(gt_pos[idx]['Hips'], (3,-1))*0.0254, cam)
-                tl_joint = np.copy(root_joint)  # shape (3,1)
-                br_joint = np.copy(root_joint)
-                tl_joint[0,0] -= 1.0000
-                tl_joint[1,0] -= 0.9000
-                br_joint[0,0] += 1.0000
-                br_joint[1,0] += 1.1000
-                bbox_25d = np.concatenate((root_joint, tl_joint, br_joint), axis=1)
-                bbox = project_cam_to_uv(bbox_25d, cam, do_distor_corr=True)  # contain 3 point: center, tl, br
+                tl_joint = np.copy(root_joint)  # shape (3,1)，定義裁剪框的左上角
+                br_joint = np.copy(root_joint)  # shape (3,1)，定義裁剪框的右下角
+                tl_joint[0,0] -= 1.0000 # 裁剪框的左上角的x坐標
+                tl_joint[1,0] -= 0.9000 # 裁剪框的左上角的y坐標
+                br_joint[0,0] += 1.0000 # 裁剪框的右下角的x坐標
+                br_joint[1,0] += 1.1000 # 裁剪框的右下角的y坐標
+                bbox_25d = np.concatenate((root_joint, tl_joint, br_joint), axis=1) # 將root_joint、tl_joint和br_joint連接起來，得到2.5D的裁剪框bbox_25d
+                bbox = project_cam_to_uv(bbox_25d, cam, do_distor_corr=True)  # contain 3 point: center, tl, br，將bbox_25d投影到2D平面，得到裁剪框的2D座標bbox
 
                 box_center = tuple(bbox[:,0])  # (x, y)
                 box_scale = tuple((bbox[:,2] - bbox[:,1])/200.)
@@ -210,13 +224,20 @@ def extract_db(config, dir_meta, cameras):
                     bone_vector_of_one_frame = dict()
                     for bone in bones:
                         q_TI = bone_refs[bone]['q_TI']
+                        # print('=>q_TI:', q_TI)
                         q_ib = bone_refs[bone]['q_ib']
+                        # print('=>q_ib:', q_ib)
                         bone_vec = bone_refs[bone]['bone_vec']
+                        # print('=>bone_vec:', bone_vec)
 
                         ori = imu_data[idx][bone][0]
+                        # print('=>ori:', ori)
                         q_Ii = Quaternion(ori)
+                        # print('=>q_Ii:', q_Ii)
                         q_Tb = q_TI * q_Ii * q_ib
+                        # print('=>q_Tb:', q_Tb)
                         rotated_bone_vec = q_Tb.rotate(bone_vec)
+                        # print('=>rotated_bone_vec:', rotated_bone_vec)
                         bone_vector_of_one_frame[bone] = rotated_bone_vec
                     bone_vectors[idx] = bone_vector_of_one_frame
 
@@ -316,18 +337,27 @@ def project_pose3d_to_2d(pose3d, camera, do_distor_corr=True):
     :param camera:
     :return:
     """
+    # 將輸入的3D姿態數據pose3d轉換為NumPy數組
     pose3d = np.array(pose3d)
+    # 獲取pose3d的列數，即pose3d中包含的3D關節數量
     num_pts = pose3d.shape[1]
+    # 創建一個形狀為[4, num_pts]的全1數組pts
     pts = np.ones([4, num_pts])
+    # 將pose3d的數據填充到pts的前三行
     pts[:3, :] = pose3d
+    # 將pts乘以相機的外參矩陣，得到xyz
     xyz = np.dot(camera['extri_mat'], pts)
+    # 將xyz的前兩行除以xyz的第三行，得到xy1
     xy1 = np.divide(xyz, xyz[2, :])
+    # 如果do_distor_corr為True，則進行失真校正
     if do_distor_corr:
         r_square = np.power(xy1[0], 2) + np.power(xy1[1], 2)
         radial_distor_coeff = 1. + camera['distor']*r_square  # todo not sure
         xy1 = np.multiply(xy1, np.array([radial_distor_coeff, radial_distor_coeff, np.ones_like(radial_distor_coeff)]))
 
+    # 將xy1乘以相機的內參矩陣，得到uv1
     uv1 = np.dot(camera['intri_mat'], xy1)
+    # 返回uv1的前兩行，這是投影到2D平面的點的座標
     return uv1[0:2, :]
 
 
