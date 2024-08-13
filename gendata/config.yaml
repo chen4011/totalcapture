@@ -28,7 +28,7 @@ test_seqs:
   # {'rom':[], 'walking':[2], 'acting':[3], 'running':[], 'freestyle':[3]}
   {'walking':[2]}
 
-gen_train: true
+gen_train: False
 gen_test: true
 
 save_visualization: false

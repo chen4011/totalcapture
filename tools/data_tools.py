@@ -4,10 +4,16 @@ import re
 import numpy as np
 from pyquaternion import Quaternion
 import bvh
+import ast
+import json
 
 
-bone_names = ('Head', 'Sternum', 'Pelvis', 'L_UpArm', 'R_UpArm', 'L_LowArm', 'R_LowArm',
-              'L_UpLeg', 'R_UpLeg', 'L_LowLeg', 'R_LowLeg', 'L_Foot', 'R_Foot')  # imu bones
+bone_names = (
+    # 'Head', 
+              'Sternum', 'Pelvis', 'L_UpArm', 'R_UpArm', 'L_LowArm', 'R_LowArm',
+              'L_UpLeg', 'R_UpLeg', 'L_LowLeg', 'R_LowLeg', 
+            #   'L_Foot', 'R_Foot'
+              )  # imu bones
 
 # marker name of vicon
 vicon_joints = ('Hips', 'Spine', 'Spine1', 'Spine2', 'Spine3', 'Neck', 'Head', 'RightShoulder',
@@ -219,6 +225,13 @@ def parse_vicon_gt_pos(fpath):
         pos_frames.append(joint_pos_frame)
     return pos_frames
 
+def parse_vicon_gt_pos_hip(fpath):
+    # 開啟給定的文件路徑fpath，並讀取所有行到lines列表中
+    with open(fpath, 'r') as f:
+        lines = f.readlines()
+    lines_dict = [json.loads(line) for line in lines]
+    return lines_dict
+
 
 def parse_imu_bone_info(fpath):
     # 開啟給定的文件路徑fpath，並讀取所有內容
@@ -251,6 +264,16 @@ def parse_imu_bone_info(fpath):
 
         # 將骨骼的起始關節、結束關節和長度添加到bone_info字典中
         bone_info[b] = (start, end, bone_length)
+    return bone_info
+
+def parse_bone_info(fpath):
+    with open(fpath, 'r') as f:
+        bone_info_str = f.read()
+    bone_info = ast.literal_eval(bone_info_str)
+
+    # 將列表轉換為元組
+    for key in bone_info:
+        bone_info[key] = tuple(bone_info[key])
     return bone_info
 
 

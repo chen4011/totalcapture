@@ -13,6 +13,7 @@ from skvideo.io import vreader, ffprobe, FFmpegReader
 import matplotlib.pyplot as plt
 from pyquaternion import Quaternion
 from tqdm import tqdm
+import json
 plt.ioff()
 
 
@@ -49,7 +50,7 @@ def get_train_val_dirs(config):
 
 
 def load_camera(config):
-    cal_file = os.path.join(config['dataset_root_dir'], 'calibration.cal')
+    cal_file = os.path.join(config['dataset_root_dir'], 'calibration_self.cal')
     cameras = dt.parse_camera_cal(cal_file)
     cam_idx = 1
     for cam in cameras:
@@ -82,36 +83,35 @@ def extract_db(config, dir_meta, cameras):
         meta_act = config['action_reverse_map'][meta['action']]  # action string name
         meta_subact = meta['subaction']
 
-        gt_pos_path = os.path.join(dir, 'gt_skel_gbl_pos.txt')  # Vicon real world position
-        gt_ori_path = os.path.join(dir, 'gt_skel_gbl_ori.txt')  # Vicon real world orinetation
-        calib_imu_bone_path = os.path.join(dir, 's{}_{}{}_calib_imu_bone.txt'.
+        # gt_pos_path = os.path.join(dir, 'gt_skel_gbl_pos_hip.txt')  # Vicon real world position
+        # gt_ori_path = os.path.join(dir, 'gt_skel_gbl_ori.txt')  # Vicon real world orinetation
+        calib_imu_bone_path = os.path.join(dir, 's{}_{}{}_calib_imu_bone_self.txt'.
                                            format(meta_sub, meta_act, meta_subact)) # IMU data
-        calib_imu_ref_path = os.path.join(dir, 's{}_{}{}_calib_imu_ref.txt'.
+        calib_imu_ref_path = os.path.join(dir, 's{}_{}{}_calib_imu_ref_self.txt'.
                                           format(meta_sub, meta_act, meta_subact))  # IMU data
-        imu_data_path = os.path.join(dir, 's{}_{}{}_Xsens.sensors'.
+        imu_data_path = os.path.join(dir, 's{}_{}{}_Xsens_self.sensors'.
                                           format(meta_sub, meta_act, meta_subact))  # IMU data
-        bvh_path = os.path.join(dir, '{}{}_BlenderZXY_YmZ.bvh'.
-                                          format(meta_act, meta_subact))    # Vicon groundtruth points
-        gt_pos = dt.parse_vicon_gt_pos(gt_pos_path)
-        # print('=>gt_pos:', gt_pos)
-        gt_ori = dt.parse_vicon_gt_ori(gt_ori_path)
+        # bvh_path = os.path.join(dir, '{}{}_BlenderZXY_YmZ.bvh'.
+        #                                   format(meta_act, meta_subact))    # Vicon groundtruth points
+        bone_info_path = os.path.join(dir, 'bone_info_self.txt')  # bone vector information
+        # gt_pos = dt.parse_vicon_gt_pos(gt_pos_path)
+        # gt_pos = dt.parse_vicon_gt_pos_hip(gt_pos_path)
+        # gt_ori = dt.parse_vicon_gt_ori(gt_ori_path)
         imu_data = dt.parse_sensor_6axis(imu_data_path)
-        # print('=>imu_data:', imu_data)
         calib_imu_bone = dt.parse_calib_imu_bone(calib_imu_bone_path)
-        # print('=>calib_imu_bone:', calib_imu_bone)
         calib_imu_ref = dt.parse_calib_imu_ref(calib_imu_ref_path)
-        # print('=>calib_imu_ref:', calib_imu_ref)
-        bone_info = dt.parse_imu_bone_info(bvh_path)  # Vicon 的骨架
-        # print('=>bone_info:', bone_info)
+        # bone_info = dt.parse_imu_bone_info(bvh_path)  # Vicon 的骨架
+        bone_info = dt.parse_bone_info(bone_info_path)  # 自己建立的骨架資訊
+        print('=>bone_info:', bone_info)
         canvas_size = (1079., 1919.)  # height width
 
         filtered_joints = config['joints_filter']
 
         # bone vector / orientation, not camera related
         bones = [
-            'Head', 'Sternum',
-              'Pelvis', 'L_UpArm', 'R_UpArm', 'L_LowArm', 'R_LowArm',
-                 'L_UpLeg', 'R_UpLeg', 'L_LowLeg', 'R_LowLeg']
+            # 'Head',
+            'Sternum', 'Pelvis', 'L_UpArm', 'R_UpArm', 'L_LowArm', 'R_LowArm', 'L_UpLeg', 'R_UpLeg',
+                 'L_LowLeg', 'R_LowLeg']
         
         # obtain ref for all bones
         # 骨架資訊
@@ -122,7 +122,8 @@ def extract_db(config, dir_meta, cameras):
             # print('=>joint_p:', joint_p)
             # joint_c = bone_info[bone][1]    # end of bone
             # print('=>joint_c:', joint_c)
-            bone_vec = np.array(bone_info[bone][2]) * 25.4  # length of bone * 25.4
+            # bone_vec = np.array(bone_info[bone][2]) * 25.4  # length of bone * 25.4
+            bone_vec = np.array(bone_info[bone]) * 10  # length of bone * 10
             # print('=>bone_info[bone][2]', bone_info[bone][2])
             # print('=>bone_vec:', bone_vec)
             q_TI = calib_imu_ref[bone]
@@ -135,18 +136,22 @@ def extract_db(config, dir_meta, cameras):
                                'bone_vec': bone_vec,
                                'q_TI': q_TI, 'q_ib': q_ib}
             # print('bone_refs_', bone, ':', bone_refs[bone], '\n')
-            # with open(os.path.join(config['db_out_dir'], 'bone_refs_vicon.txt'), 'a+') as f:
-            #     f.write('bone_refs_' + bone + ':' + str(bone_refs[bone]) + '\n')
+            with open(os.path.join(config['db_out_dir'], 'bone_refs_self.txt'), 'a+') as f:
+                f.write('bone_refs_' + bone + ':' + str(bone_refs[bone]) + '\n')
 
         bone_vectors = dict()  # of all frames
 
         # for c in range(8):
-        for c in range(4):
+        for c in range(2):
             mp4_file_name = 'TC_S{}_{}{}_cam{}.mp4'.format(meta_sub, meta_act, meta_subact, c+1)
             mp4_file_path = os.path.join(dir, mp4_file_name)
             cam = cameras[c]
             vid_info = ffprobe(mp4_file_path)
             vid_frame_num = int(vid_info['video']['@nb_frames'])
+            
+            # Get all files in the directory
+            pose2d_file_path = os.path.join(dir, 'pose-associated', f'pose_cam{c+1}_json')
+            pose2d_file_path = pose2d_file_path.replace('\\', '/')
 
             # print(mp4_file_name, vid_info['video']['@nb_frames'], len(gt_pos)- int(vid_info['video']['@nb_frames']),
             #       vid_info['video']['@bit_rate'])
@@ -165,52 +170,100 @@ def extract_db(config, dir_meta, cameras):
                     os.makedirs(seq_dir_path)
 
             vid_ff = vreader(mp4_file_path)
-            min_frame_to_iter = min(vid_frame_num, len(gt_pos), len(gt_ori), len(imu_data)) # 計算最小的幀數min_frame_to_iter，這是視頻的幀數、3D姿態數據的數量、方向數據的數量和IMU數據的數量中的最小值
+            min_frame_to_iter = min(vid_frame_num, len(imu_data)) # 計算最小的幀數min_frame_to_iter，這是視頻的幀數、3D姿態數據的數量、方向數據的數量和IMU數據的數量中的最小值
+            print('=>vid_frame_num, len(imu_data):', vid_frame_num, len(imu_data))
             # 對於每一幀（從0到min_frame_to_iter），進行以下操作
             for idx in tqdm(range(min_frame_to_iter)):
                 # 初始化一個全為0的3D姿態數組pose3d，其形狀為[3, 所有關節的數量]
-                pose3d = np.zeros([3, len(all_joints)])
+                # pose3d = np.zeros([3, len(all_joints)])
                 # 對於所有關節中的每一個關節，將其3D位置從gt_pos中提取出來，並將其放入pose3d中
-                for idx_j, j in enumerate(all_joints):
-                    pose3d[:, idx_j] = gt_pos[idx][j]
+                # for idx_j, j in enumerate(all_joints):
+                #     pose3d[:, idx_j] = gt_pos[idx][j]
                 # 將pose3d轉換為pose3d*0.0254，即將英寸轉換為米
-                pose3d = pose3d * 0.0254  # inch to meter
+                # pose3d = pose3d * 0.0254  # inch to meter
                 # 將pose3d投影到2D平面上，得到pose2d，cam是一個相機模型，do_distor_corr=True表示需要進行失真校正
-                pose2d = project_pose3d_to_2d(pose3d, cam, do_distor_corr=True)
+                # pose2d = project_pose3d_to_2d(pose3d, cam, do_distor_corr=True)
 
                 if config['save_visualization'] or config['save_frame']:
                     aframe = next(vid_ff)
-                if config['save_visualization']:  # skeleton visualization save to disk
-                    out_file_path = os.path.join(out_path, '{:0>6d}.jpg'.format(idx))
-                    marked_img = _visualize_one_frame(aframe, pose2d)  # todo vis box on image
-                    img_4save = cv2.cvtColor(marked_img, cv2.COLOR_RGB2BGR)
-                    cv2.imwrite(out_file_path, img_4save)
+                # if config['save_visualization']:  # skeleton visualization save to disk
+                #     out_file_path = os.path.join(out_path, '{:0>6d}.jpg'.format(idx))
+                #     marked_img = _visualize_one_frame(aframe, pose2d)  # todo vis box on image
+                #     img_4save = cv2.cvtColor(marked_img, cv2.COLOR_RGB2BGR)
+                #     cv2.imwrite(out_file_path, img_4save)
 
                 # cropping box information
-                p2d, p3d_cam, p3d, vis = filter_and_project_2d_pose(gt_pos[idx], filtered_joints,
-                                                               cam, canvas_size,
-                                                               do_distor_corr=True)
-                mvpose_vis = np.reshape([vis/2., vis/2., vis/2.], (3, -1))
+                # p2d, p3d_cam, p3d, vis = filter_and_project_2d_pose(gt_pos[idx], filtered_joints,
+                #                                                cam, canvas_size,
+                #                                                do_distor_corr=True)
+                # mvpose_vis = np.reshape([vis/2., vis/2., vis/2.], (3, -1))
                 # vis follow coco protocol, divide 2 and copy 3 times to follow mvpose
-                root_joint = project_pose3d_to_cam(np.reshape(gt_pos[idx]['Hips'], (3,-1))*0.0254, cam)
-                tl_joint = np.copy(root_joint)  # shape (3,1)，定義裁剪框的左上角
-                br_joint = np.copy(root_joint)  # shape (3,1)，定義裁剪框的右下角
-                tl_joint[0,0] -= 1.0000 # 裁剪框的左上角的x坐標
-                tl_joint[1,0] -= 0.9000 # 裁剪框的左上角的y坐標
-                br_joint[0,0] += 1.0000 # 裁剪框的右下角的x坐標
-                br_joint[1,0] += 1.1000 # 裁剪框的右下角的y坐標
-                bbox_25d = np.concatenate((root_joint, tl_joint, br_joint), axis=1) # 將root_joint、tl_joint和br_joint連接起來，得到2.5D的裁剪框bbox_25d
-                bbox = project_cam_to_uv(bbox_25d, cam, do_distor_corr=True)  # contain 3 point: center, tl, br，將bbox_25d投影到2D平面，得到裁剪框的2D座標bbox
 
-                box_center = tuple(bbox[:,0])  # (x, y)
-                box_scale = tuple((bbox[:,2] - bbox[:,1])/200.)
-                box = tuple(np.concatenate([bbox[:,2], bbox[:,1]]))  # (x_tl, y_tl, x_br, y_br)
+                # root_joint = project_pose3d_to_cam(np.reshape(gt_pos[idx]['Hips'], (3,-1))*0.0254, cam)
+                # root_joint = project_pose3d_to_cam(np.reshape(gt_pos[idx]['Hips'], (3,-1)), cam)
+                # tl_joint = np.copy(root_joint)  # shape (3,1)，定義裁剪框的左上角
+                # br_joint = np.copy(root_joint)  # shape (3,1)，定義裁剪框的右下角
+                # tl_joint[0,0] -= 1.0000 # 裁剪框的左上角的x坐標
+                # tl_joint[1,0] -= 0.9000 # 裁剪框的左上角的y坐標
+                # br_joint[0,0] += 1.0000 # 裁剪框的右下角的x坐標
+                # br_joint[1,0] += 1.1000 # 裁剪框的右下角的y坐標
+                # bbox_25d = np.concatenate((root_joint, tl_joint, br_joint), axis=1) # 將root_joint、tl_joint和br_joint連接起來，得到2.5D的裁剪框bbox_25d
+                # bbox = project_cam_to_uv(bbox_25d, cam, do_distor_corr=True)  # contain 3 point: center, tl, br，將bbox_25d投影到2D平面，得到裁剪框的2D座標bbox
+                
+                # camera_center
+                file = f'cam{str(c+1).zfill(2)}_{str(idx).zfill(12)}_keypoints.json'
+                full_pose2d_path = os.path.join(pose2d_file_path, file)
+                full_pose2d_path = full_pose2d_path.replace('\\', '/')
+                # print('=>full_pose2d_path:', full_pose2d_path)
+                # Read the JSON file
+                with open(full_pose2d_path, 'r') as f:
+                    data = json.load(f)
+                    r_hip_x = data['people'][0]['pose_keypoints_2d'][36]
+                    r_hip_y = data['people'][0]['pose_keypoints_2d'][37]
+                    l_hip_x = data['people'][0]['pose_keypoints_2d'][33]
+                    l_hip_y = data['people'][0]['pose_keypoints_2d'][34]
+                    # print('=>r_hip_x:', r_hip_x, 'r_hip_y:', r_hip_y, 'l_hip_x:', l_hip_x, 'l_hip_y:', l_hip_y)
+                    hip_x = (r_hip_x + l_hip_x) / 2
+                    hip_y = (r_hip_y + l_hip_y) / 2
+                    box_center = (hip_x, hip_y)
+
+                # box_center = tuple(bbox[:,0])  # (x, y)
+                # box_scale = tuple((bbox[:,2] - bbox[:,1])/200.)
+                box_scale = (3.5, 3.5)
+                # box = tuple(np.concatenate([bbox[:,2], bbox[:,1]]))  # (x_tl, y_tl, x_br, y_br)
 
                 frame_file_name = '{:0>6d}.jpg'.format(idx)
                 frame_file_path = os.path.join(seq_dir_path, frame_file_name)
                 if config['save_frame']:  # save video frame to disk
                     frame_to_cv = cv2.cvtColor(aframe, cv2.COLOR_RGB2BGR)
                     cv2.imwrite(frame_file_path, frame_to_cv)
+                
+                # # 去背
+                # if config['save_frame']:  # save video frame to disk
+                #     frame_to_cv = cv2.cvtColor(aframe, cv2.COLOR_RGB2BGR)
+
+                #     # Initialize mask
+                #     mask = np.zeros(frame_to_cv.shape[:2], np.uint8)
+
+                #     # Initialize background and foreground models
+                #     bgdModel = np.zeros((1, 65), np.float64)
+                #     fgdModel = np.zeros((1, 65), np.float64)
+
+                #     # Define rectangle for GrabCut
+                #     tl_x = int(box_center[0] - box_scale[0]*100)
+                #     tl_y = int(box_center[1] - box_scale[1]*100)
+                #     rect = (tl_x, tl_y, 750, 750)  # You need to define this rectangle according to your needs
+
+                #     # Apply GrabCut
+                #     cv2.grabCut(frame_to_cv, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
+
+                #     # Create mask where sure and likely backgrounds set to 0, otherwise 1
+                #     mask2 = np.where((mask == 2) | (mask == 0), 0, 1).astype('uint8')
+
+                #     # Multiply image with new mask to subtract background
+                #     frame_to_cv = frame_to_cv * mask2[:, :, np.newaxis]
+
+                #     cv2.imwrite(frame_file_path, frame_to_cv)
 
                 # notice: Difference between totalcapture and h36m project,
                 # (1) joints_3d in mm
@@ -251,12 +304,12 @@ def extract_db(config, dir_meta, cameras):
 
                 dataitem = {
                     'image': os.path.join(seq_dir_name, '{:0>6d}.jpg'.format(idx)),
-                    'joints_2d': p2d.T,
-                    'joints_3d': (p3d_cam*1000.).T,  # 3d pose in camera frame, for psm evaluation
-                    'joints_vis': mvpose_vis.T,  # 0: in-visible, 1: visible.
+                    # 'joints_2d': p2d.T,
+                    # 'joints_3d': (p3d_cam*1000.).T,  # 3d pose in camera frame, for psm evaluation
+                    # 'joints_vis': mvpose_vis.T,  # 0: in-visible, 1: visible.
                     'center': box_center,
                     'scale': box_scale,
-                    'box': box,
+                    # 'box': box,
                     'video_id': mp4_file_name,  # mp4 file name  # todo
                     'image_id': idx,
                     'subject': meta['subject'],
@@ -266,7 +319,7 @@ def extract_db(config, dir_meta, cameras):
                     'camera': cam_in_h36m_format,
                     'source': 'totalcapture',
                     'bone_vec': bone_vectors[idx],
-                    'joints_gt': p3d.T*1000.  # groundtruth in tracking frame
+                    # 'joints_gt': p3d.T*1000.  # groundtruth in tracking frame
                 }
 
                 dataset.append(dataitem)
@@ -420,11 +473,11 @@ if __name__ == '__main__':
         print('-------------------generate {}-----------------------'.format('val/test'))
         test_dataset = extract_db(config, test_dir_meta, cameras)
 
-        with open(os.path.join(config['db_out_dir'], 'totalcapture_validation_vicon.txt'), 'w+') as f:
+        with open(os.path.join(config['db_out_dir'], 'totalcapture_validation_self.txt'), 'w+') as f:
             for i in test_dataset:
                 f.write(str(i) + '\n')
 
-        with open(os.path.join(config['db_out_dir'], 'totalcapture_validation_vicon.pkl'), 'wb') as f:
+        with open(os.path.join(config['db_out_dir'], 'totalcapture_validation_self.pkl'), 'wb') as f:
             pickle.dump(test_dataset, f)
 
     pass
